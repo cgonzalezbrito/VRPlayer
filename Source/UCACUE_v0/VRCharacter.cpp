@@ -133,7 +133,39 @@ void AVRCharacter::UpdateBlinkers()
 
 FVector2D AVRCharacter::GetBlinkerCenter()
 {
+	FVector MovementDirection = GetVelocity().GetSafeNormal();
+	if (MovementDirection.IsNearlyZero())
+	{
+		return FVector2D(0.5, 0.5);
+	}
 
+	FVector WorldStationaryLocation;
+	if (FVector::DotProduct(Camera->GetForwardVector(), MovementDirection) > 0)
+	{
+		WorldStationaryLocation = Camera->GetComponentLocation() + MovementDirection * 1000;
+	}
+	else
+	{
+		WorldStationaryLocation = Camera->GetComponentLocation() - MovementDirection * 1000;
+	}
+
+	APlayerController* PC = Cast<APlayerController>(GetController());
+
+	if (PC != nullptr)
+	{
+		return FVector2D(0.5, 0.5);
+	}
+
+	FVector2D ScreenStationaryLocation;
+	PC->ProjectWorldLocationToScreen(WorldStationaryLocation, ScreenStationaryLocation);
+
+	int32 SizeX, SizeY;
+	PC->GetViewportSize(SizeX, SizeY);
+	ScreenStationaryLocation.X /= SizeX;
+	ScreenStationaryLocation.Y /= SizeY;
+
+		
+	return ScreenStationaryLocation;
 }
 
 void AVRCharacter::MoveForward(float throttle) 
