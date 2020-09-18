@@ -12,6 +12,7 @@
 #include "MotionControllerComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/SplineComponent.h"
+#include "Components/SplineMeshComponent.h"
 
 // Sets default values
 AVRCharacter::AVRCharacter()
@@ -59,8 +60,6 @@ void AVRCharacter::BeginPlay()
 		BlinkerMaterialInstance = UMaterialInstanceDynamic::Create(BlinkerMaterialBase, this);
 		PostProcessComponent->AddOrUpdateBlendable(BlinkerMaterialInstance);
 	}
-
-	
 }
 
 // Called every frame
@@ -101,7 +100,6 @@ bool AVRCharacter::FindTeleportDestination(TArray<FVector> &OutPath, FVector &Ou
 		ECollisionChannel::ECC_Visibility,
 		this
 	);
-	Params.DrawDebugType = EDrawDebugTrace::ForOneFrame;
 	Params.bTraceComplex = true;
 	FPredictProjectilePathResult Result;
 
@@ -136,12 +134,15 @@ void AVRCharacter::UpdateDestinationMarker()
 		DestinationMarker->SetVisibility(true);
 		DestinationMarker->SetWorldLocation(Location);
 
-		UpdateSpline(Path);
+		DrawTeleportPath(Path);
 
 	}
 	else
 	{
 		DestinationMarker->SetVisibility(false);
+
+		TArray<FVector> EmptyPath;
+		DrawTeleportPath(EmptyPath);
 	}
 
 }
@@ -157,6 +158,42 @@ void AVRCharacter::UpdateBlinkers()
 
 	FVector2D Centre = GetBlinkerCenter();
 	BlinkerMaterialInstance->SetVectorParameterValue(TEXT("Centre"),FLinearColor(Centre.X,Centre.Y,0));
+}
+
+void AVRCharacter::DrawTeleportPath(const TArray<FVector>& Path)
+{
+	UpdateSpline(Path);
+
+	for (USplineMeshComponent* SPlineMesh : TeleportPathMeshPool)
+	{
+		SPlineMesh->SetVisibility(false);
+	}
+
+	int32 SegmentNum = Path.Num() - 1;
+	for (int32 i = 0; i < SegmentNum; ++i)
+	{
+		if (TeleportPathMeshPool.Num() <= i)
+		{
+			USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(this);
+			SplineMesh->SetMobility(EComponentMobility::Movable);
+			SplineMesh->AttachToComponent(VRRoot, FAttachmentTransformRules::KeepRelativeTransform);
+			SplineMesh->SetStaticMesh(TeleportArchMesh);
+			SplineMesh->SetMaterial(0, TeleportArchMaterial);
+			SplineMesh->RegisterComponent();
+
+			TeleportPathMeshPool.Add(SplineMesh);
+		}
+
+		USplineMeshComponent* SplineMesh = TeleportPathMeshPool[i];
+		SplineMesh->SetVisibility(true);
+
+		FVector StartPos, StartTangent, EndPos, EndTangent;
+		TeleportPath->GetLocalLocationAndTangentAtSplinePoint(i, StartPos, StartTangent);
+		TeleportPath->GetLocalLocationAndTangentAtSplinePoint(i + 1, EndPos, EndTangent);
+		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent,true);
+	}
+
+
 }
 
 void AVRCharacter::UpdateSpline(const TArray<FVector>& Path)
