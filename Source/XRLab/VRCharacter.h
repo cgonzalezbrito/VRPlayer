@@ -39,6 +39,17 @@ public:
 
 private:
 
+	void MoveForward(float throttle);
+	void MoveRight(float throttle);
+
+private:
+
+	UPROPERTY()
+	class USceneComponent* VRRoot;
+	
+	UPROPERTY(VisibleAnywhere)
+	class UCameraComponent* Camera;
+
 	/**
 	 * Constructor
 	 *

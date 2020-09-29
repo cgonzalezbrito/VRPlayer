@@ -2,6 +2,8 @@
 
 
 #include "VRCharacter.h"
+#include "Camera/CameraComponent.h"
+
 #include "Core.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"
@@ -15,6 +17,12 @@ AVRCharacter::AVRCharacter()
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
+	VRRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VRRoot"));
+	VRRoot->SetupAttachment(GetRootComponent());
+
+	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	Camera->SetupAttachment(VRRoot);
+
 }
 
 // Called when the game starts or when spawned
@@ -22,7 +30,7 @@ void AVRCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	testHttpRequest();
+	// testHttpRequest();
 	
 }
 
@@ -37,6 +45,10 @@ void AVRCharacter::Tick(float DeltaTime)
 void AVRCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	PlayerInputComponent->BindAxis(TEXT("Forward"), this, &AVRCharacter::MoveForward);
+	PlayerInputComponent->BindAxis(TEXT("Right"), this, &AVRCharacter::MoveRight);
+	//PlayerInputComponent->BindAction(TEXT("Teleport"), IE_Released, this, &AVRCharacter::BeginTeleport);
 	
 }
 
@@ -105,3 +117,12 @@ void AVRCharacter::RequestComplete(FHttpRequestPtr HttpRequest, FHttpResponsePtr
 	//}
 }
 
+void AVRCharacter::MoveForward(float throttle)
+{
+	AddMovementInput(throttle * Camera->GetForwardVector());
+}
+
+void AVRCharacter::MoveRight(float throttle)
+{
+	AddMovementInput(throttle * Camera->GetRightVector());
+}
