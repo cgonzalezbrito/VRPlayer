@@ -3,12 +3,12 @@
 using UnrealBuildTool;
 using System.Collections.Generic;
 
-public class UCACUE_v0EditorTarget : TargetRules
+public class XRLabEditorTarget : TargetRules
 {
-	public UCACUE_v0EditorTarget( TargetInfo Target) : base(Target)
+	public XRLabEditorTarget( TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.V2;
-		ExtraModuleNames.AddRange( new string[] { "UCACUE_v0" } );
+		ExtraModuleNames.AddRange( new string[] { "XRLab" } );
 	}
 }
