@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "Interfaces/IHttpRequest.h"
+#include "Components/StaticMeshComponent.h"
+#include "HandController.h"
 
 #include "VRCharacter.generated.h"
 
@@ -27,20 +28,28 @@ public:
 
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	/**
-	 * Delegate called when the request completes
-	 *
-	 * @param HttpRequest - object that started/processed the request
-	 * @param HttpResponse - optional response object if request completed
-	 * @param bSucceeded - true if Url connection was made and response was received
-	 */
 	
-	void RequestComplete(FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bSucceeded);
 
 private:
 
 	void MoveForward(float throttle);
 	void MoveRight(float throttle);
+
+	bool FindTeleportDestination(TArray<FVector>& OutPath, FVector& OutLocation);
+	void DrawTeleportPath(const TArray<FVector>& Path);
+	void UpdateSpline(const TArray<FVector>& Path);
+	void UpdateDestinationMarker();
+
+	void  BeginTeleport();
+	void  FinishTeleport();
+
+	void StartFade(float fromAlpha, float toAlpha);
+
+	void GripLeft() { LeftController->Grip(); }
+	void ReleaseLeft() { LeftController->Release(); }
+
+	void GripRight() { RightController->Grip(); }
+	void ReleaseRight() { RightController->Release(); }
 
 private:
 
@@ -50,38 +59,52 @@ private:
 	UPROPERTY(VisibleAnywhere)
 	class UCameraComponent* Camera;
 
-	/**
-	 * Constructor
-	 *
-	 * @param Verb - verb to use for request (GET,POST,DELETE,etc)
-	 * @param Payload - optional payload string
-	 * @param Url - url address to connect to
-	 * @param InIterations - total test iterations to run
-	 */
-	UFUNCTION()
-	void testHttpRequest();
+	UPROPERTY()
+	AHandController* LeftController;
+
+	UPROPERTY()
+	AHandController* RightController;
+
+	UPROPERTY(VisibleAnywhere)
+	class USplineComponent* TeleportPath;
+
+	UPROPERTY()
+	TArray<class USplineMeshComponent*> TeleportPathMeshPool;
+
+	UPROPERTY(VisibleAnywhere)
+	class UStaticMeshComponent* DestinationMarker;
+
+	UPROPERTY(EditDefaultsOnly)
+	class AAPIRESTClient* APIRESTInterface;
 
 
 private:	// Configuration Parameters
-	UPROPERTY(EditAnywhere)
-	FString Verb = "GET";
 
 	UPROPERTY(EditAnywhere)
-	FString Url = "https://xrlab.ucacue.edu.ec/api/auth/token";
+	float TeleportProjectileRadius = 10;
 
 	UPROPERTY(EditAnywhere)
-	int32 TestsToRun = 1;
-	
-	UPROPERTY(EditAnywhere)
-	FString Payload;
+	float TeleportProjectileSpeed = 800;
 
 	UPROPERTY(EditAnywhere)
-	FString db = "XRLAB";
-	
-	UPROPERTY(EditAnywhere)
-	FString username = "cesar.gonzalez@ucacue.edu.ec";
+	float TeleportSimulationTime = 1;
 
 	UPROPERTY(EditAnywhere)
-	FString password = "testpass";
+	float teleportFadeTime = 1;
+
+	UPROPERTY(EditAnywhere)
+	FVector TeleportProjectionExtend = FVector(100, 100, 100);
+
+	UPROPERTY(EditDefaultsOnly)
+	class UStaticMesh* TeleportArchMesh;
+
+	UPROPERTY(EditDefaultsOnly)
+	class UMaterialInterface* TeleportArchMaterial;
+
+	UPROPERTY(EditDefaultsOnly)
+	TSubclassOf<AHandController> HandControllerClass;
+
+	UPROPERTY(EditDefaultsOnly)
+	TSubclassOf<AAPIRESTClient> APIRESTClass;
 
 };

@@ -3,10 +3,15 @@
 
 #include "VRCharacter.h"
 #include "Camera/CameraComponent.h"
-
-#include "Core.h"
-#include "HttpModule.h"
-#include "Interfaces/IHttpResponse.h"
+#include "TimerManager.h"
+#include "Components/CapsuleComponent.h"
+#include "NavigationSystem.h"
+#include "MotionControllerComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/SplineComponent.h"
+#include "Components/SplineMeshComponent.h"
+#include "HandController.h"
+#include "APIRESTClient.h"
 
 //General Log
 DEFINE_LOG_CATEGORY(LogXRLab);
@@ -23,6 +28,12 @@ AVRCharacter::AVRCharacter()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(VRRoot);
 
+	TeleportPath = CreateDefaultSubobject<USplineComponent>(TEXT("TeleportPath"));
+	TeleportPath->SetupAttachment(VRRoot);
+
+	DestinationMarker = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DestinationMarker"));
+	DestinationMarker->SetupAttachment(GetRootComponent());
+
 }
 
 // Called when the game starts or when spawned
@@ -30,7 +41,27 @@ void AVRCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// testHttpRequest();
+	DestinationMarker->SetVisibility(false);
+
+	LeftController = GetWorld()->SpawnActor<AHandController>(HandControllerClass);
+	if (LeftController != nullptr)
+	{
+		LeftController->AttachToComponent(VRRoot, FAttachmentTransformRules::KeepRelativeTransform);
+		LeftController->SetHand(EControllerHand::Left);
+		LeftController->SetOwner(this);
+	}
+
+	RightController = GetWorld()->SpawnActor<AHandController>(HandControllerClass);
+	if (RightController != nullptr)
+	{
+		RightController->AttachToComponent(VRRoot, FAttachmentTransformRules::KeepRelativeTransform);
+		RightController->SetHand(EControllerHand::Right);
+		RightController->SetOwner(this);
+	}
+
+	LeftController->PairController(RightController);
+
+	APIRESTInterface = GetWorld()->SpawnActor<AAPIRESTClient>(APIRESTClass);
 	
 }
 
@@ -38,6 +69,13 @@ void AVRCharacter::BeginPlay()
 void AVRCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	FVector NewCameraOffset = Camera->GetComponentLocation() - GetActorLocation();
+	NewCameraOffset.Z = 0;
+	AddActorWorldOffset(NewCameraOffset);
+	VRRoot->AddWorldOffset(-NewCameraOffset);
+
+	UpdateDestinationMarker();
 
 }
 
@@ -48,74 +86,123 @@ void AVRCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 
 	PlayerInputComponent->BindAxis(TEXT("Forward"), this, &AVRCharacter::MoveForward);
 	PlayerInputComponent->BindAxis(TEXT("Right"), this, &AVRCharacter::MoveRight);
-	//PlayerInputComponent->BindAction(TEXT("Teleport"), IE_Released, this, &AVRCharacter::BeginTeleport);
-	
+	PlayerInputComponent->BindAction(TEXT("Teleport"), IE_Released, this, &AVRCharacter::BeginTeleport);
+
+	PlayerInputComponent->BindAction(TEXT("GripLeft"), IE_Pressed, this, &AVRCharacter::GripLeft);
+	PlayerInputComponent->BindAction(TEXT("GripLeft"), IE_Released, this, &AVRCharacter::ReleaseLeft);
+	PlayerInputComponent->BindAction(TEXT("GripRight"), IE_Pressed, this, &AVRCharacter::GripRight);
+	PlayerInputComponent->BindAction(TEXT("GripRight"), IE_Released, this, &AVRCharacter::ReleaseRight);
 }
 
-void AVRCharacter::testHttpRequest()
+bool AVRCharacter::FindTeleportDestination(TArray<FVector>& OutPath, FVector& OutLocation)
 {
-	UE_LOG(LogXRLab, Log, TEXT("Starting test [%s] Url=[%s]"),*Verb, *Url);
+	FVector Start = RightController->GetActorLocation();
+	FVector Look = RightController->GetActorForwardVector();
 
-	TSharedPtr<IHttpRequest> Request = FHttpModule::Get().CreateRequest();
-	Request->OnProcessRequestComplete().BindUObject(this, &AVRCharacter::RequestComplete);
-	
-	/*Request->SetHeader(TEXT("User-Agent"), "X-UnrealEngine-Agent");
-	Request->SetHeader("Content-Type", TEXT("application/json"));*/
-	//Request->ProcessRequest();
+	FPredictProjectilePathParams Params(
+		TeleportProjectileRadius,
+		Start,
+		Look * TeleportProjectileSpeed,
+		TeleportSimulationTime,
+		ECollisionChannel::ECC_Visibility,
+		this
+	);
+	Params.bTraceComplex = true;
+	FPredictProjectilePathResult Result;
 
+	bool bHit = UGameplayStatics::PredictProjectilePath(this, Params, Result);
 
-	
-	Request->SetURL(FString::Printf(TEXT("%s?db=%s&login=%s&password=%s"), *Url,*db, *username, *password)); //WORKS!!
-	/*Request->SetURL(Url);
-	Request->SetContentAsString(FString::Printf(TEXT("db=%s&login=%s&password=%s"), *db, *username, *password));*/
-	if (Payload.Len() > 0)
+	if (!bHit) return false;
+
+	for (FPredictProjectilePathPointData PointData : Result.PathData)
 	{
-		Request->SetContentAsString(Payload);
+		OutPath.Add(PointData.Location);
 	}
-	Request->SetVerb(Verb);
-	Request->ProcessRequest();
 
+	FNavLocation NavLocation;
+	bool bOnNavMesh = UNavigationSystemV1::GetCurrent(GetWorld())->ProjectPointToNavigation(Result.HitResult.Location, NavLocation, TeleportProjectionExtend);
+
+	if (!bOnNavMesh) return false;
+
+	OutLocation = NavLocation.Location;
+
+	return true;
 }
 
-void AVRCharacter::RequestComplete(FHttpRequestPtr HttpRequest, FHttpResponsePtr HttpResponse, bool bSucceeded)
+void AVRCharacter::UpdateDestinationMarker()
 {
-	//Create a pointer to hold the json serialized data
-	TSharedPtr<FJsonObject> JsonObject;
+	TArray<FVector> Path;
+	FVector Location;
 
-	//Create a reader pointer to read the json data
-	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpResponse->GetContentAsString());
+	bool bHasDestination = FindTeleportDestination(Path, Location);
 
-	//Deserialize the json data given Reader and the actual object to deserialize
-	//if (FJsonSerializer::Deserialize(Reader, JsonObject))
-	//{
-	//	//Get the value of the json object by field name
-	//	int32 recievedInt = JsonObject->GetIntegerField("customInt");
-
-	//	//Output it to the engine
-	//	GEngine->AddOnScreenDebugMessage(1, 2.0f, FColor::Green, FString::FromInt(recievedInt));
-	//}
-
-	if (!HttpResponse.IsValid())
+	if (bHasDestination)
 	{
-		UE_LOG(LogXRLab, Log, TEXT("Test failed. NULL response"));
+		DestinationMarker->SetVisibility(true);
+		DestinationMarker->SetWorldLocation(Location);
+
+		DrawTeleportPath(Path);
+
 	}
 	else
 	{
-		UE_LOG(LogXRLab, Log, TEXT("Completed test [%s] Url=[%s] Response=[%d] [%s]"),
-			*HttpRequest->GetVerb(),
-			*HttpRequest->GetURL(),
-			HttpResponse->GetResponseCode(),
-			*HttpResponse->GetContentAsString()
-		);
+		DestinationMarker->SetVisibility(false);
+
+		TArray<FVector> EmptyPath;
+		DrawTeleportPath(EmptyPath);
 	}
 
-	//if ((--TestsToRun) <= 0)
-	//{
-	//	HttpRequest->OnProcessRequestComplete().Unbind();
-	//	// Done with the test. Delegate should always gets called
-	//	delete this;
-	//}
 }
+
+void AVRCharacter::DrawTeleportPath(const TArray<FVector>& Path)
+{
+	UpdateSpline(Path);
+
+	for (USplineMeshComponent* SPlineMesh : TeleportPathMeshPool)
+	{
+		SPlineMesh->SetVisibility(false);
+	}
+
+	int32 SegmentNum = Path.Num() - 1;
+
+	for (int32 i = 0; i < SegmentNum; ++i)
+	{
+		if (TeleportPathMeshPool.Num() <= i)
+		{
+			USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(this);
+			SplineMesh->SetMobility(EComponentMobility::Movable);
+			SplineMesh->AttachToComponent(TeleportPath, FAttachmentTransformRules::KeepRelativeTransform);
+			SplineMesh->SetStaticMesh(TeleportArchMesh);
+			SplineMesh->SetMaterial(0, TeleportArchMaterial);
+			SplineMesh->RegisterComponent();
+
+			TeleportPathMeshPool.Add(SplineMesh);
+		}
+
+		USplineMeshComponent* SplineMesh = TeleportPathMeshPool[i];
+		SplineMesh->SetVisibility(true);
+
+		FVector StartPos, StartTangent, EndPos, EndTangent;
+		TeleportPath->GetLocalLocationAndTangentAtSplinePoint(i, StartPos, StartTangent);
+		TeleportPath->GetLocalLocationAndTangentAtSplinePoint(i + 1, EndPos, EndTangent);
+		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent, true);
+	}
+}
+
+void AVRCharacter::UpdateSpline(const TArray<FVector>& Path)
+{
+	TeleportPath->ClearSplinePoints(false);
+
+	for (int32 i = 0; i < Path.Num(); i++)
+	{
+		FVector LocalPosition = TeleportPath->GetComponentTransform().InverseTransformPosition(Path[i]);
+		FSplinePoint Point(i, LocalPosition, ESplinePointType::Curve);
+		TeleportPath->AddPoint(Point, false);
+	}
+
+	TeleportPath->UpdateSpline();
+}
+
 
 void AVRCharacter::MoveForward(float throttle)
 {
@@ -125,4 +212,31 @@ void AVRCharacter::MoveForward(float throttle)
 void AVRCharacter::MoveRight(float throttle)
 {
 	AddMovementInput(throttle * Camera->GetRightVector());
+}
+
+
+void  AVRCharacter::BeginTeleport()
+{
+	StartFade(0, 1);
+
+	FTimerHandle Handle;
+	GetWorldTimerManager().SetTimer(Handle, this, &AVRCharacter::FinishTeleport, teleportFadeTime);
+}
+
+void  AVRCharacter::FinishTeleport()
+{
+	FVector Destination = DestinationMarker->GetComponentLocation();
+	Destination += GetCapsuleComponent()->GetScaledCapsuleHalfHeight() * GetActorUpVector();
+	SetActorLocation(Destination);
+
+	StartFade(1, 0);
+}
+
+void  AVRCharacter::StartFade(float fromAlpha, float toAlpha)
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (PC != nullptr)
+	{
+		PC->PlayerCameraManager->StartCameraFade(fromAlpha, toAlpha, teleportFadeTime, FLinearColor::Black);
+	}
 }
