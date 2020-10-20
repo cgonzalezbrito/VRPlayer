@@ -3,7 +3,9 @@
 
 #include "PaintingPicker.h"
 #include "../../Saved/PainterSaveGameIndex.h"
+#include "../../Saved/PainterSaveGame.h"
 #include "PaintingGrid.h"
+#include "ActionBar.h"
 
 // Sets default values
 APaintingPicker::APaintingPicker()
@@ -26,8 +28,25 @@ void APaintingPicker::BeginPlay()
 {
 	Super::BeginPlay();
 
+	UActionBar* ActionBarWidget = Cast<UActionBar>(ActionBar->GetUserWidgetObject());
+	if (ActionBarWidget) 
+	{
+		ActionBarWidget->SetParentPicker(this);
+	}
+
+	RefreshSlots();
+}
+
+void APaintingPicker::RefreshSlots()
+{
 	UPaintingGrid* PaintingGridWidget = Cast<UPaintingGrid>(PaintingGrid->GetUserWidgetObject());
 	if (!PaintingGridWidget) return;
+
+	PaintingGridWidget->AddPaginationDot(false);
+	PaintingGridWidget->AddPaginationDot(false);
+	PaintingGridWidget->AddPaginationDot(false);
+
+	PaintingGridWidget->ClearPaintings();
 
 	int32 Index = 0;
 	for (FString SlotName : UPainterSaveGameIndex::Load()->GetSlotNames())
@@ -36,4 +55,19 @@ void APaintingPicker::BeginPlay()
 		++Index;
 	}
 	
+}
+
+void APaintingPicker::AddPainting()
+{
+	UPainterSaveGame::Create();
+
+	RefreshSlots();
+}
+
+void APaintingPicker::ToggleDeleteMode()
+{
+	UPaintingGrid* PaintingGridWidget = Cast<UPaintingGrid>(PaintingGrid->GetUserWidgetObject());
+	if (!PaintingGridWidget) return;
+
+	PaintingGridWidget->ClearPaintings();
 }

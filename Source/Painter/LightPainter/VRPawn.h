@@ -24,16 +24,16 @@ protected:
 
 private:
 
-	void RightTriggerPressed() { if (RightPaintBrushHandController) RightPaintBrushHandController->TriggerPressed(); }
-	void RightTriggerReleased() { if (RightPaintBrushHandController) RightPaintBrushHandController->TriggerReleased(); }
-
-	void Save();
-	void Load();
+	void RightTriggerPressed() { if (RightHandController) RightHandController->TriggerPressed(); }
+	void RightTriggerReleased() { if (RightHandController) RightHandController->TriggerReleased(); }
 
 	// Config
 
 	UPROPERTY(EditDefaultsOnly)
-	TSubclassOf<AHandControllerBase> PaintBrushHandControllerClass;
+	TSubclassOf<AHandControllerBase> RightHandControllerClass;
+
+	UPROPERTY(EditDefaultsOnly)
+	TSubclassOf<AHandControllerBase> LeftHandControllerClass;
 
 	// Components
 
@@ -44,10 +44,10 @@ private:
 	UCameraComponent* Camera;
 
 	// Reference
+	UPROPERTY()
+	AHandControllerBase* RightHandController;
 
-	AHandControllerBase* RightPaintBrushHandController;
-
-	// State
-	FString CurrentSlotName;
+	UPROPERTY()
+	AHandControllerBase* LeftHandController;
 
 };

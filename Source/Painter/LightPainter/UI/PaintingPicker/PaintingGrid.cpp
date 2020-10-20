@@ -5,6 +5,7 @@
 
 #include "Components/SizeBox.h"
 
+
 void UPaintingGrid::AddPainting(int32 PaintingIndex, FString PaintingName)
 {
 	if (!PaintingGrid) return;
@@ -19,4 +20,26 @@ void UPaintingGrid::AddPainting(int32 PaintingIndex, FString PaintingName)
 	if (!CardContainer) return;
 
 	CardContainer->AddChild(NewWidget);
+}
+
+void UPaintingGrid::ClearPaintings()
+{
+	for (int32 i = 0; i < PaintingGrid->GetChildrenCount(); ++i)
+	{
+		USizeBox* CardContainer = Cast<USizeBox>(PaintingGrid->GetChildAt(i));
+		if (!CardContainer) continue;
+
+		CardContainer->ClearChildren();
+	}
+}
+
+void UPaintingGrid::AddPaginationDot(bool Active)
+{
+	if (!PaginationDots) return;
+
+	auto Dot = CreateWidget<UPaginationDot>(GetWorld(), PaginationDotClass);
+	if (!Dot) return;
+	
+	Slot = PaginationDots->AddChildToHorizontalBox(Dot);
+	Slot->SetPadding(FMargin(PaginationDotPadding, 0));
 }
