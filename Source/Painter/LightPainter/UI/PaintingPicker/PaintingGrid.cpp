@@ -1,6 +1,5 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "PaintingGrid.h"
 
 #include "Components/SizeBox.h"
@@ -40,6 +39,21 @@ void UPaintingGrid::AddPaginationDot(bool Active)
 	auto Dot = CreateWidget<UPaginationDot>(GetWorld(), PaginationDotClass);
 	if (!Dot) return;
 	
+	Dot->SetActive(Active);
+
 	Slot = PaginationDots->AddChildToHorizontalBox(Dot);
 	Slot->SetPadding(FMargin(PaginationDotPadding, 0));
+}
+
+
+void UPaintingGrid::ClearPaginationDots()
+{
+	if (!PaginationDots) return;
+
+	PaginationDots->ClearChildren();
+}
+
+int32 UPaintingGrid::GetNumberOfSlots() const
+{
+	return PaintingGrid->GetChildrenCount();
 }

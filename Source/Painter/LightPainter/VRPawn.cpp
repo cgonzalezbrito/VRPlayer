@@ -5,7 +5,9 @@
 #include "Engine/World.h"
 #include "Kismet/StereoLayerFunctionLibrary.h"
 #include "Kismet/GameplayStatics.h"
+#include "EngineUtils.h"
 #include "Saved/PainterSaveGame.h"
+#include "UI/PaintingPicker/PaintingPicker.h"
 #include "PaintingGameMode.h"
 
 AVRPawn::AVRPawn()
@@ -47,6 +49,28 @@ void AVRPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	PlayerInputComponent->BindAction(TEXT("RightTrigger"), EInputEvent::IE_Pressed, this, &AVRPawn::RightTriggerPressed);
 	PlayerInputComponent->BindAction(TEXT("RightTrigger"), EInputEvent::IE_Released, this, &AVRPawn::RightTriggerReleased);
 
+	PlayerInputComponent->BindAxis(TEXT("PaginationRight"), this, &AVRPawn::PaginateRightAxisInput);
+
 }
 
+void AVRPawn::PaginateRightAxisInput(float AxisValue)
+{
+	int32 PaginationOffset = 0;
+	PaginationOffset += AxisValue > PaginationThumbstickThreshold ? 1 : 0;
+	PaginationOffset += AxisValue < -PaginationThumbstickThreshold ? -1 : 0;
 
+	if (PaginationOffset != LastPaginationOffset && PaginationOffset != 0)
+	{
+		UpdateCurrentPage(PaginationOffset);
+	}
+
+	LastPaginationOffset = PaginationOffset;
+}
+
+void AVRPawn::UpdateCurrentPage(int32 Offset)
+{
+	for (TActorIterator<APaintingPicker> PaintingPickerItr(GetWorld()); PaintingPickerItr; ++PaintingPickerItr)
+	{
+		PaintingPickerItr->UpdateCurrentPage(Offset);
+	}
+}
